@@ -1,0 +1,193 @@
+We need to automate the CI/CD process for the organization so that every developer in the org can deploy their code swiftly to production servers but testing their changes in a stage environment. The app should be deployed to stage environment before promoted to production. This is an internet facing NodeJS web application. End users will access the application through an URL like https://node-example.com. As a DevOps engineer you are tasked to automate the deployment pipeline for this application with AWS services and other open source tools.   
+Design and implement a robust CI/CD process so that the developers can deploy the code anytime they wish on their own easily. The application should be deployed in a highly available, fault tolerant environment. In the event of any abnormality like service outage or deployment failure the developers should be notified of the incident. You are open to use any of the AWS services and technologies needed to implement this solution.   
+
+
+
+
+xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+
+
+
+We'll create two different jenkins jobs to accomplish the same where the first job will be used to checkout the code and test in stage environment and if it's working fine then this job only will trigger another sub jenkins job "Prod_Deployment" to deploy the code to production server.
+Once the prodcution job is successful, it will also sent a mail to user that this job is completed successfully.
+
+This is pipeline code so we'll create a project type as pipeline and we'll have to place this code file into SCM and mention the same location in Jenkins job as well under "Advanced Project Options" --> "Piepline script from SCM".
+
+
+===========================================================================================================================================================
+def Code_Checkout()
+{
+dir ('configuration') {
+checkout([$class: 'GitSCM', branches: [[name: '*/master']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: 'fe1233d1-e145-4f12-b5c3-d8cd12345a9e', url: 'https://github.com/opsworkshop/node-hello.git']]])
+	}
+}
+
+
+#If this job needs code build then we can use below build() to generate artifacts and same can be deployed to stage & prod.
+#But in this example, I am using the checkout code as final code and deploying the same to stage & production.
+Def build()
+{
+sh 'cd configuration/ && mvn clean install'
+}
+
+
+#We have added a credential of stage server to jenkins and below id is stage server credential ID.
+#This function will deploy the artifacts or result to stage server.
+def copyLatestToStageServer()
+{
+  sshagent(credentials: ['883338fe-82f3-419d-9ff0-60044c3cdc0d']) {
+      sh "scp -o StrictHostKeyChecking=no -r /home/jenkins/test/configuration/* stage@192.168.1.1:/home/stage/ActualPath"
+  }
+}
+
+
+#We can also test the code working in stage environment and verify if it's working fine or not.
+def verifyCode()
+{
+	place here a script file to check if js is working fine or not.
+}
+
+def send_mail() {
+emailext (
+    subject: "Job '${env.JOB_NAME} ${env.BUILD_NUMBER}'",
+    body: """Hi Team,
+    Stage deployment job is not completed & failed.
+
+Thanks & Regards,
+DevOps Team """,
+    to: 'abc@xyz.com',
+    from: "ambith@xyz.com"
+    ) 
+}
+
+
+node
+{   
+  deleteDir()
+  stage('Code checkout'){
+  try {
+  Code_Checkout()
+  }
+  catch(e) {
+  send_mail()
+  currentBuild.result == "UNSTABLE"
+  }
+  stage('Deploy the code to stage'){
+  try {
+  copyLatestToStageServer()
+  }
+  catch(e) {
+  send_mail()
+  currentBuild.result == "UNSTABLE"
+  }
+  }
+  stage('Verify the code is working or not'){
+  try {
+  verifyCode()
+  }
+  catch(e) {
+  send_mail()
+  currentBuild.result == "UNSTABLE"
+  }
+  }
+  
+  if(currentBuild.result != "UNSTABLE")
+  {
+  build 'Prod_Deployment'
+  }
+  stage('Mail Notification') {
+	emailext (
+    subject: "Job '${env.JOB_NAME} ${env.BUILD_NUMBER}'",
+    body: """Hi Team,
+  Production deployment is completed successfully.
+
+Thanks & Regards,
+DevOps Team """,
+    to: 'abc@xyz.com',
+    from: "ambith@xyz.com"
+    )    
+	}
+    
+}
+===============================================================================================================================================================
+
+"Prod_Deployment" Jenkins job:
+==============================
+
+def Code_Checkout()
+{
+dir ('configuration') {
+checkout([$class: 'GitSCM', branches: [[name: '*/master']], doGenerateSubmoduleConfigurations: false, extensions: [], submoduleCfg: [], userRemoteConfigs: [[credentialsId: 'fe1233d1-e145-4f12-b5c3-d8cd12345a9e', url: 'https://github.com/opsworkshop/node-hello.git']]])
+	}
+}
+
+
+#If this job needs code build then we can use below build() to generate artifacts and same can be deployed to stage & prod.
+#But in this example, I am using the checkout code as final code and deploying the same to stage & production.
+Def build()
+{
+sh 'cd configuration/ && mvn clean install'
+}
+
+
+#We have added a credential of stage server to jenkins and below id is Prod server credential ID.
+#This function will deploy the artifacts or result to stage server.
+def copyLatestToProdServer()
+{
+  sshagent(credentials: ['889338fe-82f3-419d-9ff0-600446789c0d']) {
+      sh "scp -o StrictHostKeyChecking=no -r /home/jenkins/test/configuration/* production@192.168.1.1:/home/production/ActualPath"
+  }
+}
+
+
+#We can also test the code working in stage environment and verify if it's working fine or not.
+def verifyCode()
+{
+	place here a script file to check if js is working fine or not.
+}
+
+def send_mail() {
+emailext (
+    subject: "Job '${env.JOB_NAME} ${env.BUILD_NUMBER}'",
+    body: """Hi Team,
+    Production deployment job is not completed & failed.
+
+Thanks & Regards,
+DevOps Team """,
+    to: 'abc@xyz.com',
+    from: "ambith@xyz.com"
+    ) 
+}
+
+node {
+deleteDir()
+  stage('Code checkout'){
+  try {
+  Code_Checkout()
+  }
+  catch(e) {
+  send_mail()
+  currentBuild.result == "UNSTABLE"
+  }
+  }
+  stage('Deploy the code to Prod'){
+  try {
+  copyLatestToProdServer()
+  }
+  catch(e) {
+  send_mail()
+  currentBuild.result == "UNSTABLE"
+  }
+  }
+  stage('Verify the code is working or not'){
+  try {
+  verifyCode()
+  }
+  catch(e) {
+  send_mail()
+  currentBuild.result == "UNSTABLE"
+  }
+  }
+  
+}
